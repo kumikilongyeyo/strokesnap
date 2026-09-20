@@ -1,0 +1,19 @@
+name: Canvas Engine 2 macOS Gate
+on:
+  push:
+    branches: ["rewrite/canvas-engine-2-ci"]
+  workflow_dispatch:
+jobs:
+  macos-gate:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift unit tests
+        run: swift test
+      - name: Compile real AppKit target
+        run: swift build -c debug --product StrokeSnap
+      - name: Geometry acceptance suite
+        run: swift run -c debug GeometryCheck
+      - name: Strict SnapCore concurrency check
+        run: swift test -Xswiftc -warn-concurrency -Xswiftc -strict-concurrency=complete
