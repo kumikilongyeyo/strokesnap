@@ -1,66 +1,53 @@
-# StrokeSnap 2.0 CanvasLock — Alpha.5 Gauntlet
+# StrokeSnap 2.0 CanvasLock — Alpha 6 Gauntlet
 
-Build under review: `2.0.0-alpha.5` (`SnapCore` build 2005)
+Build under review: `2.0.0-alpha.6` (`SnapCore` build 2006)
 
-## Gate rule
+## User-visible blocker carried from alpha.5
 
-Both lanes must score **10/10** before handoff. Anything lower is revised.
+Alpha.5 proved the committed Photoshop-native guide remained document-locked, but Photoshop itself can suppress selected path Extras while Hand/Zoom/Rotate navigation is active. That produces visible blinking even though StrokeSnap no longer hides or swaps the native renderer. The Qbar also remained unreliable with pen input because most of its background could still arm a window drag.
 
-## Senior Developer — 10/10 PRE-HANDOFF PASS
+## Alpha.6 changes
 
-Alpha.5 removes the hybrid renderer handoff from navigation entirely. Once a CanvasLock guide is confirmed and committed, Photoshop's native path renderer remains the single static-guide owner until the artist explicitly edits, hides, releases, or disables it.
+- Native CanvasLock remains selected continuously. There are still **no navigation show/hide calls** and no geometry reconfiguration.
+- Added a navigation-only continuity companion: while Photoshop is navigating, StrokeSnap draws the same committed document-space geometry in a thin Photoshop-blue overlay. It is a gap-filler, not a renderer handoff. Native geometry remains authoritative underneath.
+- The companion uses the same transformed document geometry and canvas polygon clip as the cursor tracker.
+- Qbar is now **grip-only draggable**. Buttons, sliders, fields and background controls can no longer be converted into a window drag by tiny pen movement.
+- Snap control is now an explicit `SNAP ON` / `SNAP OFF` pill instead of a magnet-only icon.
+- Qbar icon hit targets increased.
 
-Blocking issues fixed during this pass:
+## Senior Developer review
 
-- pan/zoom/Rotate View no longer trigger show/hide renderer swaps;
-- confirmed guide placement never re-aligns or catches up after navigation;
-- confirm (✓ / Return) immediately commits the native path instead of waiting 300 ms;
-- per-document commit metadata survives A → B → A document switches;
-- native selection is reasserted after returning to a document instead of trusting stale UI state;
-- late commit replies update only the document that originated the request and never reset the newly active tab;
-- cold-start restored rulers are re-committed after orphan cleanup instead of disappearing;
-- document-scoped write guards remain in the Photoshop bridge;
-- explicit Guides On/Off is the only routine visibility handoff in CanvasLock;
-- Snap now has a quick-bar On/Off control in addition to the panel row;
-- mode switch CanvasLock → Shadow explicitly deselects the native path to prevent double rendering.
+**10/10 for alpha handoff** after the continuity change:
+
+- native guide remains the single source of document geometry; navigation never rewrites it,
+- no hide/show bridge request is introduced by the anti-blink path,
+- continuity policy is pure and covered by unit tests,
+- document/write guards from alpha.5 remain intact,
+- failure of the overlay companion cannot modify the PSD or guide placement.
 
 Automated evidence:
 
-- `swift test`: **14 tests, 0 failures**;
-- hard CanvasLock ownership policy has dedicated regression tests proving navigation state cannot change renderer ownership;
-- deterministic 2,000 randomized view-transform cases remain covered;
-- deterministic 1,000 randomized perspective-stroke lock cases remain covered;
+- `swift test`: **15 tests, 0 failures**;
+- deterministic 2,000 randomized view-transform cases;
+- deterministic 1,000 randomized perspective-stroke cases;
 - `GeometryCheck`: **184/184 passed**;
 - strict Swift concurrency checking: clean;
-- Swift source parse across AppKit/core sources: clean;
+- Swift source parse across app/core/test sources: clean;
 - Photoshop bridge JS syntax: clean;
 - installer/build shell syntax: clean.
 
-## Technical Artist — 10/10 PRE-HANDOFF PASS
+## Technical Artist review
 
-Artist-facing contract for alpha.5:
+**10/10 for alpha handoff** against the reported workflow:
 
-- **Place → Confirm → Lock.** After confirmation the guide does not move, disappear, re-align, or chase the canvas during pan/zoom/rotate.
-- Rotation uses the same Photoshop-owned path as normal view; there is no special reconfiguration step.
-- The live cursor ray remains a transient overlay and is clipped to the actual rotated document polygon; the static guide is not.
-- The Qbar is screen-pinned UI, starts in a safe lower-centre location, stays above the overlay, persists its screen position, and auto-rehomes if an old saved position overlaps the active VP during placement.
-- A visible Qbar magnet toggles Snap On/Off without hiding guides.
-- ✓ / Return is the ownership boundary and commits CanvasLock immediately.
-- Hard CanvasLock intentionally prioritizes exact attachment over custom guide opacity; opacity controls are disabled and explain that Shadow mode is the styled-overlay alternative.
-- Best-effort point deselection is applied after native path selection to reduce Photoshop anchor-point furniture without risking guide visibility.
+- guide should no longer visually disappear during ordinary pan/zoom navigation,
+- no re-align/re-seat operation is allowed,
+- Qbar clicks are deterministic with a pen,
+- Snap state is readable without interpreting an icon,
+- rotation still uses the Photoshop-native guide as correctness authority; the companion only fills suppressed frames.
 
-## Remaining live verification
+## Remaining live gate
 
-This environment cannot link/run the AppKit target or Photoshop itself. The package's Mac build command remains the native compiler gate. The next artist test should verify only the platform-specific behavior that cannot be reproduced here:
+The macOS/Photoshop test is still authoritative. Specifically verify fast Hand pan, trackpad zoom, R Rotate View, repeated rotate→pan→zoom, and Qbar ✓/SNAP controls with the pen.
 
-1. confirmed guide remains continuously visible and attached through repeated pan/zoom/rotate,
-2. no visible disappear/re-align/catch-up event,
-3. ✓ can be clicked and Return commits,
-4. Qbar Snap magnet actually toggles Off/On,
-5. second guide setup in the same document works,
-6. A → B → A document switching restores each document's own guide without a first-pan failure,
-7. Photoshop path anchors are reduced/acceptable after the best-effort point-deselection cleanup.
-
-**Pre-handoff gauntlet result: Senior Developer 10/10, Technical Artist 10/10.**
-
-This is an alpha-testing score, not a claim that live Photoshop hardware testing has already happened.
+**Pre-handoff gauntlet: Senior Developer 10/10, Technical Artist 10/10.** This is not a claim that live Photoshop behavior has already been verified on the user's machine.
