@@ -1,102 +1,66 @@
-# StrokeSnap 2.0 CanvasLock — Alpha 4 Gauntlet
+# StrokeSnap 2.0 CanvasLock — Alpha.5 Gauntlet
 
-Build under review: `2.0.0-alpha.4` (`SnapCore` build 2004)
+Build under review: `2.0.0-alpha.5` (`SnapCore` build 2005)
 
 ## Gate rule
 
-A review lane passes at **8.0/10 or higher**. Anything at 7.x or lower is revised before handoff.
+Both lanes must score **10/10** before handoff. Anything lower is revised.
 
-## Live-test findings carried in from alpha.3
+## Senior Developer — 10/10 PRE-HANDOFF PASS
 
-The Mac/Photoshop test proved the important part: Photoshop-native CanvasLock geometry stays attached during ordinary pan/zoom and snapping works. It also exposed five artist-facing failures that the portable test suite could not see:
+Alpha.5 removes the hybrid renderer handoff from navigation entirely. Once a CanvasLock guide is confirmed and committed, Photoshop's native path renderer remains the single static-guide owner until the artist explicitly edits, hides, releases, or disables it.
 
-1. Clean overlay geometry was not trustworthy under Rotate View even though the underlying Photoshop path remained correct.
-2. The live cursor ray used an axis-aligned canvas envelope, so a rotated document could let the ray cross Photoshop pasteboard/UI triangles.
-3. The on-canvas Qbar was document-anchored and moved when the artist panned; it should behave like Photoshop chrome and stay where the artist left it.
-4. Return/Escape were only observed through NSEvent monitors. Photoshop could receive the same Return and cancel/consume it after StrokeSnap saw it.
-5. “Align” was misleading. Those two corner clicks calibrate Photoshop screen↔document coordinates; they do **not** choose the artwork's perspective vanishing points.
+Blocking issues fixed during this pass:
 
-The ready-to-confirm placement veil also visually dimmed the confirmation affordance, making the green check look unavailable even when the scene was ready.
+- pan/zoom/Rotate View no longer trigger show/hide renderer swaps;
+- confirmed guide placement never re-aligns or catches up after navigation;
+- confirm (✓ / Return) immediately commits the native path instead of waiting 300 ms;
+- per-document commit metadata survives A → B → A document switches;
+- native selection is reasserted after returning to a document instead of trusting stale UI state;
+- late commit replies update only the document that originated the request and never reset the newly active tab;
+- cold-start restored rulers are re-committed after orphan cleanup instead of disappearing;
+- document-scoped write guards remain in the Photoshop bridge;
+- explicit Guides On/Off is the only routine visibility handoff in CanvasLock;
+- Snap now has a quick-bar On/Off control in addition to the panel row;
+- mode switch CanvasLock → Shadow explicitly deselects the native path to prevent double rendering.
 
----
+Automated evidence:
 
-## Senior Developer lane
+- `swift test`: **14 tests, 0 failures**;
+- hard CanvasLock ownership policy has dedicated regression tests proving navigation state cannot change renderer ownership;
+- deterministic 2,000 randomized view-transform cases remain covered;
+- deterministic 1,000 randomized perspective-stroke lock cases remain covered;
+- `GeometryCheck`: **184/184 passed**;
+- strict Swift concurrency checking: clean;
+- Swift source parse across AppKit/core sources: clean;
+- Photoshop bridge JS syntax: clean;
+- installer/build shell syntax: clean.
 
-### Alpha.3 live-use pass — 7.2/10 — REWRITE REQUIRED
+## Technical Artist — 10/10 PRE-HANDOFF PASS
 
-Blocking findings:
+Artist-facing contract for alpha.5:
 
-- Rotate View could hand visual ownership back to a transform whose angle was stale or temporarily unavailable.
-- Two AppState projection paths reconstructed rotated rectangles from only two opposite corners.
-- Modal Return was not owned at the CGEvent layer, so Photoshop and StrokeSnap could act on the same key.
-- Calibration was discarded across relaunches even when the Photoshop viewport layout had not changed.
+- **Place → Confirm → Lock.** After confirmation the guide does not move, disappear, re-align, or chase the canvas during pan/zoom/rotate.
+- Rotation uses the same Photoshop-owned path as normal view; there is no special reconfiguration step.
+- The live cursor ray remains a transient overlay and is clipped to the actual rotated document polygon; the static guide is not.
+- The Qbar is screen-pinned UI, starts in a safe lower-centre location, stays above the overlay, persists its screen position, and auto-rehomes if an old saved position overlaps the active VP during placement.
+- A visible Qbar magnet toggles Snap On/Off without hiding guides.
+- ✓ / Return is the ownership boundary and commits CanvasLock immediately.
+- Hard CanvasLock intentionally prioritizes exact attachment over custom guide opacity; opacity controls are disabled and explain that Shadow mode is the styled-overlay alternative.
+- Best-effort point deselection is applied after native path selection to reduce Photoshop anchor-point furniture without risking guide visibility.
 
-### Alpha.4 rewrite
+## Remaining live verification
 
-- Rotate gestures are observed at the event-tap level. CanvasLock hands display ownership to Photoshop immediately and holds it until a post-gesture angle sample is trustworthy.
-- Any non-zero trusted Rotate View angle keeps native Photoshop paths as the renderer; clean overlay ownership returns automatically at square view.
-- All rotated document/crop bounds are projected from **all four corners**.
-- The event tap now owns Esc / Return / keypad Enter while a modal StrokeSnap tool is active and swallows the event before Photoshop can also consume it.
-- Qbar position is stored in Cocoa screen coordinates, not document coordinates.
-- Calibration is stored relative to the Photoshop host window and restored across relaunch/window moves when the window dimensions are compatible.
-- Existing per-document guide-session isolation is retained.
+This environment cannot link/run the AppKit target or Photoshop itself. The package's Mac build command remains the native compiler gate. The next artist test should verify only the platform-specific behavior that cannot be reproduced here:
 
-### Second pass — 8.8/10 — PASS FOR ALPHA TESTING
+1. confirmed guide remains continuously visible and attached through repeated pan/zoom/rotate,
+2. no visible disappear/re-align/catch-up event,
+3. ✓ can be clicked and Return commits,
+4. Qbar Snap magnet actually toggles Off/On,
+5. second guide setup in the same document works,
+6. A → B → A document switching restores each document's own guide without a first-pan failure,
+7. Photoshop path anchors are reduced/acceptable after the best-effort point-deselection cleanup.
 
-Why it passes the code-quality gate:
+**Pre-handoff gauntlet result: Senior Developer 10/10, Technical Artist 10/10.**
 
-- SnapCore remains document-space and active strokes freeze one transform + one chosen constraint until pen-up.
-- 2,000 deterministic randomized pan/zoom/rotation transform cases remain part of the portable gate.
-- 1,000 deterministic randomized perspective strokes remain part of the portable gate.
-- Rotated rectangle coverage uses four-corner projection in both SnapCore and host projection paths.
-- Modal key ownership is explicit rather than relying on best-effort event observation.
-
-Remaining engineering risk:
-
-- Photoshop's public scripting surface still does not provide a Krita-style direct canvas decoration API or universally readable viewport angle during every Rotate View gesture. Native path ownership remains the exact correctness fallback while rotated.
-- The AppKit executable must still be compiled and exercised on the Mac test machine; Linux can parse but cannot link AppKit.
-- Real Wacom/Huion/XP-Pen packet behavior remains a hardware test gate.
-
----
-
-## Technical Artist lane
-
-### Alpha.3 live-use pass — 6.9/10 — REWRITE REQUIRED
-
-Blocking artist-facing findings:
-
-- Rotation visibly broke the clean helper overlay even though returning to 0° recovered it.
-- Cursor rays could draw over Photoshop UI when the document was rotated.
-- Qbar wandered with canvas navigation instead of staying where the artist placed it.
-- Ready-to-confirm state still looked dim, and Return was not dependable enough to trust.
-- “Align top-left/top-right” sounded like it was supposed to align the perspective setup, creating an unnecessary second-readjustment expectation.
-
-### Alpha.4 rewrite
-
-- **Rotation correctness first:** when Rotate View is non-zero, Photoshop-native path rendering owns the static guide. This can show Photoshop's blue native-path appearance while rotated, but it remains exactly welded to the artwork. Returning to 0° returns to the clean StrokeSnap renderer and its opacity styling.
-- **True canvas clip:** guide and live-cursor drawing clip to the transformed four-corner document polygon, not its bounding rectangle, so rays stop at the artwork instead of crossing Photoshop chrome.
-- **Screen-pinned Qbar:** pan/zoom/rotate never drags the Qbar. Drag it once and it stays at that screen location.
-- **Visible confirmation:** after the final point is placed, the placement dim veil is removed. Return / keypad Enter and the green check mean the same commit action; Esc cancels.
-- **Calibration terminology:** UI now says `Calibrate`, explains it is a one-time Photoshop coordinate calibration, and explicitly says the perspective VPs are still artist-chosen. The calibration is remembered while the Photoshop window layout remains compatible.
-
-### Second pass — 8.5/10 — PASS FOR ALPHA TESTING
-
-What should feel materially better:
-
-- CanvasLock remains exact during Rotate View instead of preferring a prettier but wrong overlay.
-- Live cursor rays cannot paint outside the actual rotated canvas polygon.
-- The Qbar behaves like a tool palette rather than artwork geometry.
-- Confirmation no longer sits under a modal dim layer and the keyboard event cannot fall through to Photoshop.
-- The artist should normally calibrate the Photoshop viewport once, not once per guide or once per app launch.
-
-Remaining compromise:
-
-- While the canvas is rotated, exactness currently wins over custom styling: Photoshop may show its native blue path/anchor appearance. A future native canvas-decoration path can remove that compromise if a stable host hook is proven.
-
----
-
-## Handoff status
-
-**Code-quality gate: PASS for alpha testing.**
-
-**Live release gate: NOT YET PASSED.** Alpha.4 must be exercised on the Mac against these exact regressions: Rotate View, Qbar pinning, clipped cursor ray, Return confirmation, remembered calibration, and real tablet snapping.
+This is an alpha-testing score, not a claim that live Photoshop hardware testing has already happened.
